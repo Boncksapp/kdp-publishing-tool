@@ -1,7 +1,17 @@
 {
   "buildCommand": "npm run build",
-  "outputDirectory": ".output/public",
+  "outputDirectory": ".vercel/output/static",
   "installCommand": "npm install",
   "framework": "tanstack-start",
-  "devCommand": "npm run dev:web"
+  "functions": {
+    ".output/server/index.mjs": {
+      "runtime": "nodejs20.x",
+      "includeFiles": ".output/server/**"
+    }
+  },
+  "routes": [
+    { "src": "/assets/(.*)", "dest": "/assets/$1" },
+    { "src": "/favicon.ico", "dest": "/favicon.ico" },
+    { "src": "/(.*)", "dest": "/.output/server/index.mjs" }
+  ]
 }
