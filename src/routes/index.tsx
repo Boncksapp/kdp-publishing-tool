@@ -37,12 +37,17 @@ function Page(){
       const d=await PDFDocument.create()
       for(let i=0;i<pc;i++){
         setLg(`Page ${i+1}/${pc}...`);const[p]=await d.copyPages(s,[i]);d.addPage(p)
-        const o=(i+1)%2===1;p.setSize(t.w,t.h);p.setCropBox(0,0,t.w,t.h)
+        const o=(i+1)%2===1
+        // Save original page dimensions BEFORE modifying page size
+        const owOrig=p.getWidth();const ohOrig=p.getHeight()
+        p.setSize(t.w,t.h);p.setCropBox(0,0,t.w,t.h)
         const lM=(o?im:m)*INCH;const rM=(o?m:im)*INCH
         const sx=lM;const sy=m*INCH;const sw=t.w-lM-rM;const sh=t.h-m*INCH*2
-        const ow=p.getWidth();const oh=p.getHeight();const sc=Math.min(sw/ow,sh/oh,1)
-        if(sc<1){p.scaleContent(sc,sc);p.translateContent(sx+(sw-ow*sc)/2,sy+(sh-oh*sc)/2)}
-        else{p.translateContent(sx+(sw-ow)/2,sy+(sh-oh)/2)}
+        // Only scale if original content is larger than target page
+        // This prevents shrinking text when the PDF is already the right trim size
+        const sc=Math.min(t.w/owOrig,t.h/ohOrig,1)
+        if(sc<1){p.scaleContent(sc,sc);p.translateContent(sx+(sw-owOrig*sc)/2,sy+(sh-ohOrig*sc)/2)}
+        else{p.translateContent(sx+(sw-owOrig)/2,sy+(sh-ohOrig)/2)}
       }
       setLg('Saving...');const o=await d.save()
       setDl(URL.createObjectURL(new Blob([o.buffer as ArrayBuffer],{type:'application/pdf'})))
