@@ -142,8 +142,8 @@ function Page(){
         <optgroup label="Paperback">{['5x8','6x9','6.14x9.21','7x10','7.5x9.25','8x10','8.25x11','8.5x11'].map(k=><option key={k} value={k}>{SIZES[k].label}</option>)}</optgroup>
         <optgroup label="Hardcover">{['hc_6x9','hc_7x10','hc_8x10','hc_8.25x11','hc_8.5x11'].map(k=><option key={k} value={k}>{SIZES[k].label}</option>)}</optgroup>
       </select>
-    </div>
-    <div className="mb-6 rounded-2xl border-3 border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50 p-10 text-center shadow-md hover:shadow-lg transition-shadow cursor-pointer" style={f?{borderColor:'#22c55e',background:'linear-gradient(135deg,#f0fdf4,#dcfce7)'}:{}}>
+    </div>}
+          <div className="mb-6 rounded-2xl border-3 border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50 p-10 text-center shadow-md hover:shadow-lg transition-shadow cursor-pointer" style={f?{borderColor:'#22c55e',background:'linear-gradient(135deg,#f0fdf4,#dcfce7)'}:{}}>
       <input ref={ref} type="file" accept={md==='manu'?'.pdf':'image/*'} className="hidden" onChange={e=>{const x=e.target.files?.[0];if(!x)return;setF(x);setDone(false);setDl('');setErr('');setLg('');setRp(null);if(md!=='manu'){setPv(URL.createObjectURL(x))}}}/>
       {!f?(<div className="cursor-pointer" onClick={()=>ref.current?.click()}><div className="text-6xl mb-4">{md==='manu'?'📄':md==='ebook'?'📱':'🖼️'}</div><p className="text-xl font-bold text-gray-800">{md==='manu'?'Select a PDF':md==='ebook'?'Select cover image':'Select an image'}</p><p className="text-sm text-gray-500 mt-1">{md==='manu'?'PDF only':md==='ebook'?'PNG, JPG, WEBP (10:16 ratio)':'JPG, PNG'}</p></div>):(<div><p className="text-xl font-bold text-green-700">✅ {f.name}</p><p className="text-sm text-gray-500">{(f.size/1024).toFixed(0)} KB</p>{md!=='manu'&&pv&&<div className="mt-4 max-w-xs mx-auto rounded-xl overflow-hidden shadow-md border"><img src={pv} alt="" className="w-full h-auto"/></div>}<button onClick={rs} className="mt-3 text-sm font-medium text-red-600 hover:text-red-800 bg-red-50 px-4 py-1.5 rounded-lg hover:bg-red-100">Remove</button></div>)}
     </div>
