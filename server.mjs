@@ -4,6 +4,7 @@ import { extname, join } from 'path'
 import server from './dist/server/server.js'
 
 const PORT = process.env.PORT || 3000
+const HOST = '0.0.0.0'
 const CLIENT_DIR = new URL('./dist/client/', import.meta.url).pathname
 
 const MIME_TYPES = {
@@ -59,6 +60,6 @@ createServer(async (req, res) => {
     res.statusCode = 500
     res.end('Internal Server Error')
   }
-}).listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
+}).listen(PORT, HOST, () => {
+  console.log(`Server running on ${HOST}:${PORT}`)
 })
