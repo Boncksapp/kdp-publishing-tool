@@ -84,8 +84,8 @@ function Page(){
       const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
       const ctx=canvas.getContext('2d')!
       ctx.fillStyle='#FFF';ctx.fillRect(0,0,W,H)
-      // Fit image within canvas (contain, not cover) so nothing gets cropped
-      const sc=Math.min(W/img.width,H/img.height)
+      // Fill canvas completely (cover, not contain) — artwork extends to all edges
+      const sc=Math.max(W/img.width,H/img.height)
       ctx.drawImage(img,Math.round((W-Math.round(img.width*sc))/2),Math.round((H-Math.round(img.height*sc))/2),Math.round(img.width*sc),Math.round(img.height*sc))
       setLg('Creating JPEG...')
       const blob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.95))
@@ -115,8 +115,8 @@ function Page(){
       const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
       const ctx=canvas.getContext('2d')!
       ctx.fillStyle='#FFF';ctx.fillRect(0,0,W,H)
-      // Fit image within 1600x2560 canvas (contain, aspect ratio preserved)
-      const sc=Math.min(W/img.width,H/img.height)
+      // Fill canvas completely — no borders, artwork extends to all edges
+      const sc=Math.max(W/img.width,H/img.height)
       ctx.drawImage(img,Math.round((W-Math.round(img.width*sc))/2),Math.round((H-Math.round(img.height*sc))/2),Math.round(img.width*sc),Math.round(img.height*sc))
       setLg('Creating high-quality JPEG...')
       // Use quality 0.92 to keep file under 5MB while maintaining crisp detail
