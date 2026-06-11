@@ -3,16 +3,19 @@ import { useState, useRef } from 'react'
 import { PDFDocument } from 'pdf-lib'
 
 const INCH=72;const DPI=300
-const SIZES:Record<string,{w:number;h:number;label:string}>={
-  '5x8':{w:5*INCH,h:8*INCH,label:'5"x8"'},'6x9':{w:6*INCH,h:9*INCH,label:'6"x9"'},
-  '6.14x9.21':{w:6.14*INCH,h:9.21*INCH,label:'6.14"x9.21"'},'7x10':{w:7*INCH,h:10*INCH,label:'7"x10"'},
-  '7.5x9.25':{w:7.5*INCH,h:9.25*INCH,label:'7.5"x9.25"'},'8x10':{w:8*INCH,h:10*INCH,label:'8"x10"'},
-  '8.25x11':{w:8.25*INCH,h:11*INCH,label:'8.25"x11"'},'8.5x11':{w:8.5*INCH,h:11*INCH,label:'8.5"x11"'},
-  'hc_6x9':{w:6*INCH,h:9*INCH,label:'6"x9"(HC)'},'hc_7x10':{w:7*INCH,h:10*INCH,label:'7"x10"(HC)'},
-  'hc_8x10':{w:8*INCH,h:10*INCH,label:'8"x10"(HC)'},'hc_8.25x11':{w:8.25*INCH,h:11*INCH,label:'8.25"x11"(HC)'},
-  'hc_8.5x11':{w:8.5*INCH,h:11*INCH,label:'8.5"x11"(HC)'},
+const SIZES:Record<string,{w:number;h:number;label:string;hc:boolean}>={
+  '5x8':{w:5*INCH,h:8*INCH,label:'5"x8"',hc:false},'6x9':{w:6*INCH,h:9*INCH,label:'6"x9"',hc:false},
+  '6.14x9.21':{w:6.14*INCH,h:9.21*INCH,label:'6.14"x9.21"',hc:false},'7x10':{w:7*INCH,h:10*INCH,label:'7"x10"',hc:false},
+  '7.5x9.25':{w:7.5*INCH,h:9.25*INCH,label:'7.5"x9.25"',hc:false},'8x10':{w:8*INCH,h:10*INCH,label:'8"x10"',hc:false},
+  '8.25x11':{w:8.25*INCH,h:11*INCH,label:'8.25"x11"',hc:false},'8.5x11':{w:8.5*INCH,h:11*INCH,label:'8.5"x11"',hc:false},
+  'hc_6x9':{w:6*INCH,h:9*INCH,label:'6"x9"(HC)',hc:true},'hc_7x10':{w:7*INCH,h:10*INCH,label:'7"x10"(HC)',hc:true},
+  'hc_8x10':{w:8*INCH,h:10*INCH,label:'8"x10"(HC)',hc:true},'hc_8.25x11':{w:8.25*INCH,h:11*INCH,label:'8.25"x11"(HC)',hc:true},
+  'hc_8.5x11':{w:8.5*INCH,h:11*INCH,label:'8.5"x11"(HC)',hc:true},
 }
-function g(pc:number){return pc<=150?.375:pc<=300?.5:pc<=500?.625:pc<=700?.75:.875}
+// Hardcover gutter: 0.625" for ≤300pg, 0.75" for ≤500pg, 0.875" for >500pg
+function hcGutter(pc:number){return pc<=300?.625:pc<=500?.75:.875}
+// Hardcover margins: outside/top/bottom = 0.375"
+const HC_MARGIN=0.375
 
 function Page(){
   const [md,setMd]=useState<'manu'|'cover'>('manu')
@@ -29,29 +32,39 @@ function Page(){
   const rs=()=>{setF(null);setDone(false);setDl('');setErr('');setLg('');setRp(null);setPv('')}
 
   const rm=async()=>{
-    if(!f)return;setBusy(true);setErr('');setLg('Reading...');setRp(null)
+    if(!f)return;setBusy(true);setErr('');setLg('Analyzing...');setRp(null)
     try{
-      const b=await f.arrayBuffer();const t=SIZES[sz]
-      const s=await PDFDocument.load(b);const pc=s.getPageCount();const gu=g(pc)
-      const im=gu+.125;const m=t.w/INCH<6?.375:t.w/INCH<7?.5:.5
+      const b=await f.arrayBuffer();const t=SIZES[sz];const isHC=t.hc
+      const s=await PDFDocument.load(b);const pc=s.getPageCount()
+      // Hardcover: gutter = 0.625" (≤300pg), 0.75" (≤500pg), 0.875" (>500pg)
+      // Outside/top/bottom margins = 0.375"
+      const gu=isHC?hcGutter(pc):0.625
+      const outMargin=isHC?HC_MARGIN:0.375
+      // Inside margin = gutter
+      const im=gu
+      const om=outMargin
       const d=await PDFDocument.create()
       for(let i=0;i<pc;i++){
         setLg(`Page ${i+1}/${pc}...`);const[p]=await d.copyPages(s,[i]);d.addPage(p)
-        const o=(i+1)%2===1
-        // Save original page dimensions BEFORE modifying page size
+        const odd=(i+1)%2===1
         const owOrig=p.getWidth();const ohOrig=p.getHeight()
         p.setSize(t.w,t.h);p.setCropBox(0,0,t.w,t.h)
-        const lM=(o?im:m)*INCH;const rM=(o?m:im)*INCH
-        const sx=lM;const sy=m*INCH;const sw=t.w-lM-rM;const sh=t.h-m*INCH*2
-        // Scale to fit within SAFE MARGINS area using original content dimensions
-        // This ensures gutter/margins meet KDP requirements
-        const sc=Math.min(sw/owOrig,sh/ohOrig,1)
-        if(sc<1){p.scaleContent(sc,sc);p.translateContent(sx+(sw-owOrig*sc)/2,sy+(sh-ohOrig*sc)/2)}
-        else{p.translateContent(sx+(sw-owOrig)/2,sy+(sh-ohOrig)/2)}
+        // Mirrored margins: odd pages have gutter on LEFT, even on RIGHT
+        const leftM=(odd?im:om)*INCH;const rightM=(odd?om:im)*INCH
+        const safeX=leftM;const safeY=om*INCH
+        const safeW=t.w-leftM-rightM;const safeH=t.h-om*INCH*2
+        // Scale content to fit within safe print area (never enlarge)
+        const sc=Math.min(safeW/owOrig,safeH/ohOrig,1)
+        if(sc<1){
+          p.scaleContent(sc,sc)
+          p.translateContent(safeX+(safeW-owOrig*sc)/2,safeY+(safeH-ohOrig*sc)/2)
+        } else {
+          p.translateContent(safeX+(safeW-owOrig)/2,safeY+(safeH-ohOrig)/2)
+        }
       }
-      setLg('Saving...');const o=await d.save()
-      setDl(URL.createObjectURL(new Blob([o.buffer as ArrayBuffer],{type:'application/pdf'})))
-      setRp({t:'manu',trim:t.label,pc,g:gu.toFixed(3),im:im.toFixed(3),m:m.toFixed(3)})
+      setLg('Validating & saving...');const out=await d.save()
+      setDl(URL.createObjectURL(new Blob([out.buffer as ArrayBuffer],{type:'application/pdf'})))
+      setRp({t:'manu',trim:t.label,pc,mode:isHC?'Hardcover':'Paperback',gu:gu.toFixed(3),om:om.toFixed(3)})
       setDone(true);setLg('')
     }catch(e:any){setErr((e as Error).message||'Failed')};setBusy(false)
   }
@@ -116,7 +129,7 @@ function Page(){
     {done&&dl&&<div className="mt-6 space-y-5">
       <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-center shadow-xl"><p className="text-3xl text-white font-extrabold">{md==='manu'?'✅ Repaired!':'✅ Cover Ready!'}</p></div>
       {rp&&<div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-md"><h3 className="text-lg font-bold text-gray-800 mb-4">📋 Report</h3><div className="grid grid-cols-2 gap-3">
-        {rp.t==='manu'?[['Trim',rp.trim],['Pages',rp.pc],['Gutter',rp.g+'"'],['Inside',rp.im+'"'],['Margin',rp.m+'"']].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))
+        {rp.t==='manu'?[['Format',rp.mode],['Trim',rp.trim],['Pages',rp.pc],['Gutter',rp.gu+'"'],['Margin',rp.om+'"']].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))
         :[['Type',rp.btype],['Book Size',rp.trim],['Image',rp.size],['Resolution',rp.dpi]].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))}
       </div></div>}
       <div className="flex flex-col items-center gap-3"><a href={dl} download={md==='manu'?'repaired-'+f?.name:'cover-'+f?.name.replace(/\.[^.]+$/,'.jpg')} className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold text-lg px-10 py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all inline-block">⬇ {md==='manu'?'Download PDF':'Download JPEG'}</a><button onClick={()=>window.open(dl,'_blank')} className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow hover:shadow-md transition-all cursor-pointer text-sm">👁 Open</button></div>
