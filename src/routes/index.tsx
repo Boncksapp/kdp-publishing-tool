@@ -43,9 +43,9 @@ function Page(){
         p.setSize(t.w,t.h);p.setCropBox(0,0,t.w,t.h)
         const lM=(o?im:m)*INCH;const rM=(o?m:im)*INCH
         const sx=lM;const sy=m*INCH;const sw=t.w-lM-rM;const sh=t.h-m*INCH*2
-        // Only scale if original content is larger than target page
-        // This prevents shrinking text when the PDF is already the right trim size
-        const sc=Math.min(t.w/owOrig,t.h/ohOrig,1)
+        // Scale to fit within SAFE MARGINS area using original content dimensions
+        // This ensures gutter/margins meet KDP requirements
+        const sc=Math.min(sw/owOrig,sh/ohOrig,1)
         if(sc<1){p.scaleContent(sc,sc);p.translateContent(sx+(sw-owOrig*sc)/2,sy+(sh-ohOrig*sc)/2)}
         else{p.translateContent(sx+(sw-owOrig)/2,sy+(sh-ohOrig)/2)}
       }
