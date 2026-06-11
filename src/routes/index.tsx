@@ -71,7 +71,8 @@ function Page(){
       const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
       const ctx=canvas.getContext('2d')!
       ctx.fillStyle='#FFF';ctx.fillRect(0,0,W,H)
-      const sc=Math.max(W/img.width,H/img.height)
+      // Fit image within canvas (contain, not cover) so nothing gets cropped
+      const sc=Math.min(W/img.width,H/img.height)
       ctx.drawImage(img,Math.round((W-Math.round(img.width*sc))/2),Math.round((H-Math.round(img.height*sc))/2),Math.round(img.width*sc),Math.round(img.height*sc))
       setLg('Creating JPEG...')
       const blob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.95))
