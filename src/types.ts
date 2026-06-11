@@ -1,4 +1,4 @@
-import type { getRouter } from './router'
+import type { getRouter } from './router.tsx'
 import type { createStart } from '@tanstack/react-start'
 declare module '@tanstack/react-start' {
   interface Register {
