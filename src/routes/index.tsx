@@ -83,11 +83,27 @@ function Page(){
       await new Promise<void>((ok,fail)=>{img.onload=()=>ok();img.onerror=()=>fail(new Error('Bad image'));img.src=pv})
       const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
       const ctx=canvas.getContext('2d')!
-      ctx.fillStyle='#FFF';ctx.fillRect(0,0,W,H)
-      // Fill canvas completely (cover, not contain) — artwork extends to all edges
-      const sc=Math.max(W/img.width,H/img.height)
-      ctx.drawImage(img,Math.round((W-Math.round(img.width*sc))/2),Math.round((H-Math.round(img.height*sc))/2),Math.round(img.width*sc),Math.round(img.height*sc))
-      setLg('Creating JPEG...')
+      // Step 1: Draw image centered, fully visible (fit mode)
+      const sc=Math.min(W/img.width,H/img.height)
+      const iw=img.width*sc;const ih=img.height*sc
+      const ix=Math.round((W-iw)/2);const iy=Math.round((H-ih)/2)
+      ctx.drawImage(img,ix,iy,iw,ih)
+      // Step 2: Stretch edge pixels outward to fill any remaining canvas gaps
+      // No white borders — seamless edge extension fills all empty space
+      if(iw<W){ // horizontal gaps
+        ctx.drawImage(canvas,ix,iy,1,ih,0,iy,ix,ih)
+        ctx.drawImage(canvas,ix+iw-1,iy,1,ih,ix+iw,iy,W-ix-iw,ih)
+      }
+      if(ih<H){ // vertical gaps
+        ctx.drawImage(canvas,ix,iy,iw,1,ix,0,iw,iy)
+        ctx.drawImage(canvas,ix,iy+ih-1,iw,1,ix,iy+ih,iw,H-iy-ih)
+      }
+      if(iw<W&&ih<H){ // corner gaps
+        ctx.drawImage(canvas,ix,iy,1,1,0,0,ix,iy)
+        ctx.drawImage(canvas,ix+iw-1,iy,1,1,ix+iw,0,W-ix-iw,iy)
+        ctx.drawImage(canvas,ix,iy+ih-1,1,1,0,iy+ih,ix,H-iy-ih)
+        ctx.drawImage(canvas,ix+iw-1,iy+ih-1,1,1,ix+iw,iy+ih,W-ix-iw,H-iy-ih)
+      }
       const blob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.95))
       if(!blob)throw new Error('JPEG failed')
       const buf=await blob.arrayBuffer();const bytes=new Uint8Array(buf)
@@ -114,10 +130,26 @@ function Page(){
       await new Promise<void>((ok,fail)=>{img.onload=()=>ok();img.onerror=()=>fail(new Error('Bad image'));img.src=pv})
       const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
       const ctx=canvas.getContext('2d')!
-      ctx.fillStyle='#FFF';ctx.fillRect(0,0,W,H)
-      // Fill canvas completely — no borders, artwork extends to all edges
-      const sc=Math.max(W/img.width,H/img.height)
-      ctx.drawImage(img,Math.round((W-Math.round(img.width*sc))/2),Math.round((H-Math.round(img.height*sc))/2),Math.round(img.width*sc),Math.round(img.height*sc))
+      // Step 1: Draw image centered, fully visible
+      const sc=Math.min(W/img.width,H/img.height)
+      const iw=img.width*sc;const ih=img.height*sc
+      const ix=Math.round((W-iw)/2);const iy=Math.round((H-ih)/2)
+      ctx.drawImage(img,ix,iy,iw,ih)
+      // Step 2: Extend edge pixels to fill gaps — no white borders
+      if(iw<W){
+        ctx.drawImage(canvas,ix,iy,1,ih,0,iy,ix,ih)
+        ctx.drawImage(canvas,ix+iw-1,iy,1,ih,ix+iw,iy,W-ix-iw,ih)
+      }
+      if(ih<H){
+        ctx.drawImage(canvas,ix,iy,iw,1,ix,0,iw,iy)
+        ctx.drawImage(canvas,ix,iy+ih-1,iw,1,ix,iy+ih,iw,H-iy-ih)
+      }
+      if(iw<W&&ih<H){
+        ctx.drawImage(canvas,ix,iy,1,1,0,0,ix,iy)
+        ctx.drawImage(canvas,ix+iw-1,iy,1,1,ix+iw,0,W-ix-iw,iy)
+        ctx.drawImage(canvas,ix,iy+ih-1,1,1,0,iy+ih,ix,H-iy-ih)
+        ctx.drawImage(canvas,ix+iw-1,iy+ih-1,1,1,ix+iw,iy+ih,W-ix-iw,H-iy-ih)
+      }
       setLg('Creating high-quality JPEG...')
       // Use quality 0.92 to keep file under 5MB while maintaining crisp detail
       const blob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.92))
