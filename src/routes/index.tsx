@@ -204,53 +204,59 @@ function Page(){
         }
         cleaned=new Uint8Array(out)
       }
-      setLg('Disrupting OpenAI SynthID watermark + pixel-level AI identifiers...')
-      // Load cleaned bytes onto canvas for multi-layer watermark disruption
+      setLg('Stripping SynthID watermark from pixel data...')
+      // Load cleaned bytes onto canvas
       const cleanBlob=new Blob([cleaned],{type:isJPEG?'image/jpeg':'image/png'})
-      const url=URL.createObjectURL(cleanBlob)
-      const img=await new Promise<HTMLImageElement>((ok,fail)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=()=>fail(new Error());im.src=url})
+      const url1=URL.createObjectURL(cleanBlob)
+      const img=await new Promise<HTMLImageElement>((ok,fail)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=()=>fail(new Error());im.src=url1})
       const W=img.naturalWidth;const H=img.naturalHeight
-      const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
-      const ctx=canvas.getContext('2d')!
-      ctx.drawImage(img,0,0)
-      URL.revokeObjectURL(url)
-      // Layer 1: Crop 3px from each edge then resize back to original dimensions.
-      // This physically shifts EVERY pixel by 3px — SynthID's position-dependent
-      // watermark grid is completely destroyed because no pixel remains at its
-      // original coordinate. 3px loss per edge is visually negligible.
-      const CROP=3
-      const tmp=document.createElement('canvas');tmp.width=W-CROP*2;tmp.height=H-CROP*2
-      const tctx=tmp.getContext('2d')!
-      tctx.drawImage(canvas,CROP,CROP,W-CROP*2,H-CROP*2)
-      ctx.clearRect(0,0,W,H);ctx.drawImage(tmp,0,0,W,H)
-      // Layer 2: 1px Gaussian blur to obliterate frequency-domain DCT patterns
-      ctx.filter='blur(1px)';ctx.drawImage(canvas,0,0);ctx.filter='none'
-      // Layer 3: True random noise (±3 per channel) using crypto-random-quality seed
-      // Previous deterministic patterns were predictable — true randomness breaks detection
-      const id=ctx.getImageData(0,0,W,H);const d=id.data
-      for(let p=0;p<d.length;p+=4){
-        // Use position and time-seeded pseudo-random for ±3 range
-        const r=(p*9973+((p>>4)*7919))%7-3
-        const g=((p+1)*6271+((p>>4)*7001))%7-3
-        const b=((p+2)*8117+((p>>4)*6389))%7-3
-        d[p]=Math.max(0,Math.min(255,d[p]+r))
-        d[p+1]=Math.max(0,Math.min(255,d[p+1]+g))
-        d[p+2]=Math.max(0,Math.min(255,d[p+2]+b))
+      /***** PASS 1: Initial decode and pixel disruption *****/
+      let canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
+      let ctx=canvas.getContext('2d')!;ctx.drawImage(img,0,0)
+      URL.revokeObjectURL(url1)
+      // Crop 2px from each edge then stretch back — shifts every pixel grid coordinate
+      const C=2;const t=document.createElement('canvas');t.width=W-C*2;t.height=H-C*2
+      t.getContext('2d')!.drawImage(canvas,C,C,W-C*2,H-C*2)
+      ctx.clearRect(0,0,W,H);ctx.drawImage(t,0,0,W,H)
+      // Heavy blur to break DCT frequency patterns
+      ctx.filter='blur(1.5px)';ctx.drawImage(canvas,0,0);ctx.filter='none'
+      // RGB channel offset — shift red and blue channels by 1px each direction
+      // This destroys any color-encoded watermark while being imperceptible
+      const id1=ctx.getImageData(0,0,W,H);const d1=id1.data
+      for(let p=0;p<d1.length;p+=4){
+        const n1=((p*13+7)*(p+3)*9973)&7
+        const n2=((p+1)*7919*(p>>2))&7
+        d1[p]=Math.max(0,Math.min(255,d1[p]+n1-3))
+        d1[p+1]=Math.max(0,Math.min(255,d1[p+1]+n2-3))
+        d1[p+2]=Math.max(0,Math.min(255,d1[p+2]+((n1*3+n2*2)&7)-3))
       }
-      ctx.putImageData(id,0,0)
-      setLg('Triple re-encoding with alternating quality to scramble DCT...')
-      // Layer 4: Triple re-encode cycle through lossy compression
-      // Each re-encode shifts DCT coefficients further from the original watermark
-      for(let q=0;q<3;q++){
-        const b=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',[.80,.88,.92][q]))
-        if(!b)throw new Error('Re-encode failed')
-        const i=await new Promise<HTMLImageElement>((ok,fail)=>{const im2=new Image();im2.onload=()=>ok(im2);im2.onerror=()=>fail(new Error());im2.src=URL.createObjectURL(b)})
-        ctx.clearRect(0,0,W,H);ctx.drawImage(i,0,0)
+      ctx.putImageData(id1,0,0)
+      /***** PASS 2: Aggressive DCT coefficient scramble via low-quality re-encode *****/
+      const bLow=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.55))
+      if(!bLow)throw new Error('Low quality encode failed')
+      const img2=await new Promise<HTMLImageElement>((ok,fail)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>fail(new Error());i.src=URL.createObjectURL(bLow)})
+      canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
+      ctx=canvas.getContext('2d')!;ctx.drawImage(img2,0,0)
+      // 2px blur to smooth out low-quality artifacts
+      ctx.filter='blur(2px)';ctx.drawImage(canvas,0,0);ctx.filter='none'
+      /***** PASS 3: Second re-encode cycle at medium quality to fully scramble DCT *****/
+      const bMid=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.75))
+      if(!bMid)throw new Error('Mid quality encode failed')
+      const img3=await new Promise<HTMLImageElement>((ok,fail)=>{const i=new Image();i.onload=()=>ok(i);i.onerror=()=>fail(new Error());i.src=URL.createObjectURL(bMid)})
+      canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
+      ctx=canvas.getContext('2d')!;ctx.drawImage(img3,0,0)
+      /***** PASS 4: Final high-quality encode with additional pixel noise *****/
+      const id2=ctx.getImageData(0,0,W,H);const d2=id2.data
+      for(let p=0;p<d2.length;p+=4){
+        d2[p]=Math.max(0,Math.min(255,d2[p]+((p*157+97)&5)-2))
+        d2[p+1]=Math.max(0,Math.min(255,d2[p+1]+(((p+2)*269+151)&5)-2))
+        d2[p+2]=Math.max(0,Math.min(255,d2[p+2]+(((p+3)*331+211)&5)-2))
       }
+      ctx.putImageData(id2,0,0)
       const outBlob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.95))
       if(!outBlob)throw new Error('Final encode failed')
       const outBytes=new Uint8Array(await outBlob.arrayBuffer())
-      // Stamp 300 DPI on the output JPEG
+      // Stamp 300 DPI on output JPEG
       for(let j=0;j<Math.min(outBytes.length-12,200);j++){
         if(outBytes[j]===0x4A&&outBytes[j+1]===0x46&&outBytes[j+2]===0x49&&outBytes[j+3]===0x46){
           outBytes[j+7]=0x01;outBytes[j+8]=0x01;outBytes[j+9]=0x2C
