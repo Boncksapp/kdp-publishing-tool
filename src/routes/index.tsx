@@ -18,7 +18,7 @@ function hcGutter(pc:number){return pc<=300?.625:pc<=500?.75:.875}
 const HC_MARGIN=0.375
 
 function Page(){
-  const [md,setMd]=useState<'manu'|'cover'|'ebook'>('manu')
+  const [md,setMd]=useState<'manu'|'cover'|'ebook'|'clean'>('manu')
   const [sz,setSz]=useState('8.25x11')
   const [f,setF]=useState<File|null>(null)
   const [busy,setBusy]=useState(false)
@@ -161,14 +161,86 @@ function Page(){
     }catch(e:any){setErr((e as Error).message||'Failed')};setBusy(false)
   }
 
+  const rclean=async()=>{
+    if(!f)return;setBusy(true);setErr('');setLg('Stripping metadata...');setRp(null)
+    try{
+      const buf=await f.arrayBuffer();const bytes=new Uint8Array(buf)
+      const isPNG=bytes[0]===0x89&&bytes[1]===0x50&&bytes[2]===0x4E&&bytes[3]===0x47
+      const isJPEG=bytes[0]===0xFF&&bytes[1]===0xD8
+      if(!isPNG&&!isJPEG)throw new Error('Only PNG and JPEG supported')
+      let cleaned:Uint8Array
+      if(isJPEG){
+        // Strip all APP markers except APP0/JFIF (FF E0)
+        // Removes: APP1-EXIF, APP2-XMP, APP3-C2PA/CAI, APP13-Photoshop, etc.
+        const out:number[]=[]
+        let i=2;out.push(0xFF,0xD8)
+        while(i<bytes.length){
+          if(bytes[i]===0xFF){
+            const marker=bytes[i+1]
+            // SOS (Start of Scan) — image data starts, copy rest as-is
+            if(marker===0xDA){
+              while(i<bytes.length)out.push(bytes[i++])
+              break
+            }
+            // APP0 (JFIF) — keep
+            if(marker===0xE0){
+              const len=(bytes[i+2]<<8)|bytes[i+3]
+              for(let j=0;j<len+2;j++)out.push(bytes[i++])
+              continue
+            }
+            // All other APP markers (E1-EF) and COM (FE) — strip
+            if((marker>=0xE0&&marker<=0xEF)||marker===0xFE){
+              const len=(bytes[i+2]<<8)|bytes[i+3]
+              i+=len+2;continue
+            }
+          }
+          out.push(bytes[i++])
+        }
+        cleaned=new Uint8Array(out)
+        // Re-stamp DPI via JFIF
+        for(let j=0;j<Math.min(cleaned.length-12,200);j++){
+          if(cleaned[j]===0x4A&&cleaned[j+1]===0x46&&cleaned[j+2]===0x49&&cleaned[j+3]===0x46){
+            cleaned[j+7]=0x01;cleaned[j+8]=0x01;cleaned[j+9]=0x2C
+            cleaned[j+10]=0x01;cleaned[j+11]=0x2C
+            break
+          }
+        }
+      } else {
+        // PNG — strip metadata chunks (tEXt, zTXt, iTXt, eXIf)
+        // These contain Stable Diffusion params, C2PA, EXIF, etc.
+        const out:number[]=[]
+        // PNG header
+        for(let j=0;j<8;j++)out.push(bytes[j])
+        let i=8;const strip:Record<string,boolean>={'tEXt':true,'zTXt':true,'iTXt':true,'eXIf':true}
+        while(i+8<=bytes.length){
+          const len=(bytes[i]<<24)|(bytes[i+1]<<16)|(bytes[i+2]<<8)|bytes[i+3]
+          const type=String.fromCharCode(bytes[i+4],bytes[i+5],bytes[i+6],bytes[i+7])
+          if(type==='IEND'){for(let j=i;j<bytes.length;j++)out.push(bytes[j]);break}
+          if(!strip[type])for(let j=i;j<i+12+len;j++)out.push(bytes[j])
+          i+=12+len
+        }
+        cleaned=new Uint8Array(out)
+      }
+      setLg(`Cleaned: stripped ${isJPEG?'EXIF/GPS/C2PA/APP markers':'metadata/PNG text chunks'}`)
+      const ext=isJPEG?'jpg':'png'
+      setDl(URL.createObjectURL(new Blob([cleaned],{type:isJPEG?'image/jpeg':'image/png'})))
+      const origKB=(bytes.length/1024).toFixed(0)
+      const cleanKB=(cleaned.length/1024).toFixed(0)
+      const strippedTypes=isJPEG?'EXIF · GPS · C2PA · CAI · XMP · Photoshop · ICC':'tEXt · zTXt · iTXt · eXIf · SD params'
+      setRp({t:'clean',fmt:isJPEG?'JPEG':'PNG',orig:`${origKB}KB`,clean:`${cleanKB}KB`,stripped:strippedTypes})
+      setDone(true);setLg('')
+    }catch(e:any){setErr((e as Error).message||'Failed')};setBusy(false)
+  }
+
   return(<div className="mx-auto max-w-3xl px-4 py-12">
     <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-2xl p-8 mb-6 text-center shadow-xl"><h1 className="text-4xl font-extrabold text-white mb-2">📚 Amazon KDP Publishing Tool</h1><p className="text-blue-100 text-lg">Manuscript repair &amp; cover converter</p></div>
     <div className="flex justify-center mb-6"><div className="inline-flex rounded-2xl bg-gray-100 p-1.5 shadow-inner">
       <button onClick={()=>{setMd('manu');rs()}} className={`px-6 py-3 rounded-xl font-bold text-base cursor-pointer ${md==='manu'?'bg-white text-blue-700 shadow-md':'text-gray-600 hover:text-gray-800'}`}>📖 Manuscript</button>
       <button onClick={()=>{setMd('cover');rs()}} className={`px-6 py-3 rounded-xl font-bold text-base cursor-pointer ${md==='cover'?'bg-white text-blue-700 shadow-md':'text-gray-600 hover:text-gray-800'}`}>🎨 Cover</button>
       <button onClick={()=>{setMd('ebook');rs()}} className={`px-6 py-3 rounded-xl font-bold text-base cursor-pointer ${md==='ebook'?'bg-white text-blue-700 shadow-md':'text-gray-600 hover:text-gray-800'}`}>📱 eBook</button>
+      <button onClick={()=>{setMd('clean');rs()}} className={`px-6 py-3 rounded-xl font-bold text-base cursor-pointer ${md==='clean'?'bg-white text-blue-700 shadow-md':'text-gray-600 hover:text-gray-800'}`}>🧹 Clean</button>
     </div></div>
-    {md!=='ebook'&&<div className="mb-6 p-6 bg-white rounded-2xl shadow-md border border-gray-200">
+    {md!=='ebook'&&md!=='clean'&&<div className="mb-6 p-6 bg-white rounded-2xl shadow-md border border-gray-200">
       <label className="block text-lg font-bold text-gray-800 mb-3 text-center">{md==='manu'?'📐 Trim Size':'🖼 Book Size'}</label>
       <select value={sz} onChange={e=>setSz(e.target.value)} className="block mx-auto w-full max-w-lg rounded-xl border-2 border-blue-300 px-5 py-3.5 text-base font-semibold text-gray-800 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 cursor-pointer appearance-none" style={{backgroundImage:`url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,backgroundPosition:'right 0.75rem center',backgroundRepeat:'no-repeat',backgroundSize:'1.5rem 1.5rem'}}>
         <optgroup label="Paperback">{['5x8','6x9','6.14x9.21','7x10','7.5x9.25','8x10','8.25x11','8.5x11'].map(k=><option key={k} value={k}>{SIZES[k].label}</option>)}</optgroup>
@@ -177,19 +249,20 @@ function Page(){
     </div>}
           <div className="mb-6 rounded-2xl border-3 border-dashed border-blue-300 bg-gradient-to-br from-blue-50 to-indigo-50 p-10 text-center shadow-md hover:shadow-lg transition-shadow cursor-pointer" style={f?{borderColor:'#22c55e',background:'linear-gradient(135deg,#f0fdf4,#dcfce7)'}:{}}>
       <input ref={ref} type="file" accept={md==='manu'?'.pdf':'image/*'} className="hidden" onChange={e=>{const x=e.target.files?.[0];if(!x)return;setF(x);setDone(false);setDl('');setErr('');setLg('');setRp(null);if(md!=='manu'){setPv(URL.createObjectURL(x))}}}/>
-      {!f?(<div className="cursor-pointer" onClick={()=>ref.current?.click()}><div className="text-6xl mb-4">{md==='manu'?'📄':md==='ebook'?'📱':'🖼️'}</div><p className="text-xl font-bold text-gray-800">{md==='manu'?'Select a PDF':md==='ebook'?'Select cover image':'Select an image'}</p><p className="text-sm text-gray-500 mt-1">{md==='manu'?'PDF only':md==='ebook'?'PNG, JPG, WEBP (10:16 ratio)':'JPG, PNG'}</p></div>):(<div><p className="text-xl font-bold text-green-700">✅ {f.name}</p><p className="text-sm text-gray-500">{(f.size/1024).toFixed(0)} KB</p>{md!=='manu'&&pv&&<div className="mt-4 max-w-xs mx-auto rounded-xl overflow-hidden shadow-md border"><img src={pv} alt="" className="w-full h-auto"/></div>}<button onClick={rs} className="mt-3 text-sm font-medium text-red-600 hover:text-red-800 bg-red-50 px-4 py-1.5 rounded-lg hover:bg-red-100">Remove</button></div>)}
+      {!f?(<div className="cursor-pointer" onClick={()=>ref.current?.click()}><div className="text-6xl mb-4">{md==='manu'?'📄':md==='ebook'?'📱':md==='clean'?'🧹':'🖼️'}</div><p className="text-xl font-bold text-gray-800">{md==='manu'?'Select a PDF':md==='ebook'?'Select cover image':md==='clean'?'Select image to clean':'Select an image'}</p><p className="text-sm text-gray-500 mt-1">{md==='manu'?'PDF only':md==='ebook'?'PNG, JPG, WEBP (10:16 ratio)':md==='clean'?'PNG, JPG':'JPG, PNG'}</p></div>):(<div><p className="text-xl font-bold text-green-700">✅ {f.name}</p><p className="text-sm text-gray-500">{(f.size/1024).toFixed(0)} KB</p>{md!=='manu'&&pv&&<div className="mt-4 max-w-xs mx-auto rounded-xl overflow-hidden shadow-md border"><img src={pv} alt="" className="w-full h-auto"/></div>}<button onClick={rs} className="mt-3 text-sm font-medium text-red-600 hover:text-red-800 bg-red-50 px-4 py-1.5 rounded-lg hover:bg-red-100">Remove</button></div>)}
     </div>
-    {f&&!done&&<div className="text-center mb-4"><button onClick={md==='manu'?rm:md==='ebook'?re:rc} disabled={busy} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-lg px-10 py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 cursor-pointer">{busy?'⏳ Processing...':md==='manu'?'🔧 Repair PDF':md==='ebook'?'📱 Create eBook Cover':'🎨 Convert Cover'}</button></div>}
+    {f&&!done&&<div className="text-center mb-4"><button onClick={md==='manu'?rm:md==='ebook'?re:md==='clean'?rclean:rc} disabled={busy} className="bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-bold text-lg px-10 py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all disabled:opacity-50 cursor-pointer">{busy?'⏳ Processing...':md==='manu'?'🔧 Repair PDF':md==='ebook'?'📱 Create eBook Cover':md==='clean'?'🧹 Clean Metadata':'🎨 Convert Cover'}</button></div>}
     {busy&&<div className="mt-4 p-4 bg-blue-50 rounded-xl text-blue-700 font-medium text-center shadow">{lg}</div>}
     {err&&<div className="mt-4 p-4 bg-red-50 rounded-xl text-red-700 font-medium text-center shadow border border-red-200">{err}</div>}
     {done&&dl&&<div className="mt-6 space-y-5">
-      <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-center shadow-xl"><p className="text-3xl text-white font-extrabold">{md==='manu'?'✅ Repaired!':md==='ebook'?'✅ eBook Cover Ready!':'✅ Cover Ready!'}</p></div>
+      <div className="bg-gradient-to-r from-green-500 to-emerald-600 rounded-2xl p-6 text-center shadow-xl"><p className="text-3xl text-white font-extrabold">{md==='manu'?'✅ Repaired!':md==='ebook'?'✅ eBook Cover Ready!':md==='clean'?'✅ Metadata Cleaned!':'✅ Cover Ready!'}</p></div>
       {rp&&<div className="rounded-2xl border border-gray-200 bg-white p-6 shadow-md"><h3 className="text-lg font-bold text-gray-800 mb-4">📋 Report</h3><div className="grid grid-cols-2 gap-3">
         {rp.t==='manu'?[['Format',rp.mode],['Trim',rp.trim],['Pages',rp.pc],['Gutter',rp.gu+'"'],['Margin',rp.om+'"']].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))
         :rp.t==='ebook'?[['Dimensions',rp.dims],['Aspect',rp.ratio],['File size',rp.size],['Resolution',rp.dpi]].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))
+        :rp.t==='clean'?[['Format',rp.fmt],['Original',rp.orig],['Cleaned',rp.clean],['Stripped',rp.stripped]].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))
         :[['Type',rp.btype],['Book Size',rp.trim],['Image',rp.size],['Resolution',rp.dpi]].map(([l,v])=>(<div key={l} className="bg-gray-50 rounded-xl p-3 border border-gray-100"><p className="text-xs font-semibold text-gray-500 uppercase">{l}</p><p className="text-lg font-bold text-gray-800 mt-1">{v}</p></div>))}
       </div></div>}
-      <div className="flex flex-col items-center gap-3"><a href={dl} download={md==='manu'?'repaired-'+f?.name:md==='ebook'?'ebook-cover.jpg':'cover-'+f?.name.replace(/\.[^.]+$/,'.jpg')} className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold text-lg px-10 py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all inline-block">⬇ {md==='manu'?'Download PDF':md==='ebook'?'Download JPEG':'Download JPEG'}</a><button onClick={()=>window.open(dl,'_blank')} className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow hover:shadow-md transition-all cursor-pointer text-sm">👁 Open</button></div>
+      <div className="flex flex-col items-center gap-3"><a href={dl} download={md==='manu'?'repaired-'+f?.name:md==='ebook'?'ebook-cover.jpg':md==='clean'?'cleaned-'+f?.name.replace(/\.[^.]+$/,'.jpg'):'cover-'+f?.name.replace(/\.[^.]+$/,'.jpg')} className="bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white font-bold text-lg px-10 py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all inline-block">⬇ {md==='manu'?'Download PDF':md==='ebook'?'Download JPEG':md==='clean'?'Download Cleaned':'Download JPEG'}</a><button onClick={()=>window.open(dl,'_blank')} className="bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white font-semibold px-6 py-2.5 rounded-xl shadow hover:shadow-md transition-all cursor-pointer text-sm">👁 Open</button></div>
     </div>}
   </div>)
 }
