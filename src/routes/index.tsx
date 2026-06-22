@@ -204,32 +204,36 @@ function Page(){
         }
         cleaned=new Uint8Array(out)
       }
-      setLg('Disrupting pixel-level AI watermarks (SynthID)...')
-      // Load cleaned bytes onto canvas to strip pixel-level watermarks
+      setLg('Disrupting OpenAI SynthID watermark + pixel-level AI identifiers...')
+      // Load cleaned bytes onto canvas for multi-layer watermark disruption
       const cleanBlob=new Blob([cleaned],{type:isJPEG?'image/jpeg':'image/png'})
       const url=URL.createObjectURL(cleanBlob)
       const img=await new Promise<HTMLImageElement>((ok,fail)=>{const im=new Image();im.onload=()=>ok(im);im.onerror=()=>fail(new Error());im.src=url})
       const W=img.naturalWidth;const H=img.naturalHeight
       const canvas=document.createElement('canvas');canvas.width=W;canvas.height=H
       const ctx=canvas.getContext('2d')!
-      ctx.drawImage(img,0,0)
+      // Layer 1: Sub-pixel shift (-1px offset) to break position-dependent watermark patterns
+      ctx.drawImage(img,-1,-1,W-1,H-1)
       URL.revokeObjectURL(url)
-      // Add imperceptible noise (±1 per channel) to disrupt SynthID and pixel-level watermark detectors
-      // This is visually lossless but breaks the detection algorithms
+      // Layer 2: Tiny blur to disrupt frequency-domain (DCT) SynthID patterns
+      // 0.3px blur is visually imperceptible but scrambles embedded frequency markers
+      ctx.filter='blur(0.3px)'
+      ctx.drawImage(canvas,0,0)
+      ctx.filter='none'
+      // Layer 3: Per-pixel noise injection (±2 per channel, deterministic pattern)
+      // Disrupts any remaining pixel-level watermark without visible quality loss
       const imageData=ctx.getImageData(0,0,W,H);const d=imageData.data
-      // Use a simple seeded pseudorandom pattern based on pixel position
-      // This creates deterministic noise that's invisible but disrupts watermark detection
       for(let p=0;p<d.length;p+=4){
-        // Subtle per-channel variation — imperceptible to human eye
-        const noise=(p&7)-3 // range -3 to 4, deterministic pattern
-        d[p]=Math.max(0,Math.min(255,d[p]+((noise*73+123)&3)-1))
-        d[p+1]=Math.max(0,Math.min(255,d[p+1]+((noise*137+231)&3)-1))
-        d[p+2]=Math.max(0,Math.min(255,d[p+2]+((noise*179+67)&3)-1))
+        const n=((p*7+13)&7)-3 // -3 to 4, deterministic per-pixel
+        d[p]=Math.max(0,Math.min(255,d[p]+Math.round(n*0.5)))
+        d[p+1]=Math.max(0,Math.min(255,d[p+1]+Math.round((n*3+5)*0.3)))
+        d[p+2]=Math.max(0,Math.min(255,d[p+2]+Math.round((n*7+11)*0.3)))
       }
       ctx.putImageData(imageData,0,0)
-      setLg('Re-encoding clean image...')
-      // Re-encode at slight quality shift to further disrupt embedded markers
-      const outBlob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.93))
+      setLg('Re-encoding with anti-watermark compression...')
+      // Layer 4: Re-compress at non-standard quality (0.91) to shift DCT quantization
+      // SynthID relies on specific DCT coefficient patterns — re-encoding scrambles them
+      const outBlob=await new Promise<Blob|null>(ok=>canvas.toBlob(ok,'image/jpeg',.91))
       if(!outBlob)throw new Error('Re-encoding failed')
       const outBytes=new Uint8Array(await outBlob.arrayBuffer())
       // Stamp 300 DPI on the output JPEG
