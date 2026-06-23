@@ -281,6 +281,14 @@ function Page(){
       <button onClick={()=>{setMd('ebook');rs()}} className={`px-6 py-3 rounded-xl font-bold text-base cursor-pointer ${md==='ebook'?'bg-white text-blue-700 shadow-md':'text-gray-600 hover:text-gray-800'}`}>📱 eBook</button>
       <button onClick={()=>{setMd('clean');rs()}} className={`px-6 py-3 rounded-xl font-bold text-base cursor-pointer ${md==='clean'?'bg-white text-blue-700 shadow-md':'text-gray-600 hover:text-gray-800'}`}>🧹 Clean</button>
     </div></div>
+        <div className="text-center mb-6 px-4">
+          <p className="text-gray-600 text-sm font-medium min-h-[2.5rem] leading-relaxed">
+            {md==='manu'&&'📖 Repair PDF manuscripts for KDP — correct margins, gutters, and trim sizes for paperback & hardcover'}
+            {md==='cover'&&'🎨 Convert cover images to KDP print-ready dimensions with proper bleed and wrap for paperback & hardcover'}
+            {md==='ebook'&&'📱 Create Amazon Kindle eBook covers at 1600×2560 px — optimized for all Kindle devices and the Kindle Store'}
+            {md==='clean'&&'🧹 Strip EXIF, GPS, C2PA, AI generation metadata, and SynthID watermarks — prevents social media AI labeling'}
+          </p>
+        </div>
     {md!=='ebook'&&md!=='clean'&&<div className="mb-6 p-6 bg-white rounded-2xl shadow-md border border-gray-200">
       <label className="block text-lg font-bold text-gray-800 mb-3 text-center">{md==='manu'?'📐 Trim Size':'🖼 Book Size'}</label>
       <select value={sz} onChange={e=>setSz(e.target.value)} className="block mx-auto w-full max-w-lg rounded-xl border-2 border-blue-300 px-5 py-3.5 text-base font-semibold text-gray-800 bg-white shadow-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 cursor-pointer appearance-none" style={{backgroundImage:`url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e")`,backgroundPosition:'right 0.75rem center',backgroundRepeat:'no-repeat',backgroundSize:'1.5rem 1.5rem'}}>
